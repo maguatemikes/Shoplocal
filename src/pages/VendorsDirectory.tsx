@@ -12,6 +12,8 @@ import {
   Check,
   Map,
   Store,
+  Navigation,
+  Loader2,
 } from "lucide-react";
 import axios from "axios";
 import { Input } from "../components/ui/input";
@@ -38,6 +40,7 @@ import {
   PopoverTrigger,
 } from "../components/ui/popover";
 import { LeafletMap } from "../components/LeafletMap";
+import { calculateDistance, formatDistance } from "../lib/distance";
 
 // GeoDirectory Place interface (based on API response)
 interface Place {
@@ -87,7 +90,7 @@ interface Place {
 }
 
 // Helper function to convert API Place to Vendor
-function placeToVendor(place: Place): Vendor {
+function placeToVendor(place: Place, userLocation?: { lat: number; lon: number } | null): Vendor {
   // Handle category - post_category from API
   let specialty = "General";
   let categoryId: number | undefined;
@@ -149,6 +152,17 @@ function placeToVendor(place: Place): Vendor {
       ? place.title
       : place.title?.rendered || "Business";
 
+  // Calculate distance if user location is available
+  let distance: number | undefined;
+  if (userLocation && place.latitude && place.longitude) {
+    distance = calculateDistance(
+      userLocation.lat,
+      userLocation.lon,
+      parseFloat(place.latitude),
+      parseFloat(place.longitude)
+    );
+  }
+
   return {
     id: place.id.toString(),
     name: titleString,
@@ -171,6 +185,7 @@ function placeToVendor(place: Place): Vendor {
         : place.city || place.region || "Local",
     latitude: place.latitude,
     longitude: place.longitude,
+    distance: distance,
     socialLinks: {
       website: place.website || undefined,
       instagram: place.twitter || undefined, // Using twitter field for instagram as example
@@ -240,6 +255,16 @@ export default function VendorsDirectory() {
   const [selectedVendorId, setSelectedVendorId] = useState<
     string | null
   >(null);
+
+  // User location state
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lon: number;
+  } | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [showManualLocation, setShowManualLocation] = useState(false);
+  const [manualZipCode, setManualZipCode] = useState("");
 
   // Cache helper functions
   const getCachedData = () => {
@@ -336,9 +361,9 @@ export default function VendorsDirectory() {
       endIndex,
     );
 
-    // Map API places to Vendor format
+    // Map API places to Vendor format (with distance calculation)
     const mappedVendors = paginatedPlaces.map((place: Place) =>
-      placeToVendor(place),
+      placeToVendor(place, userLocation),
     );
 
     // Store vendors for display
@@ -730,6 +755,128 @@ export default function VendorsDirectory() {
     }
   };
 
+  // Handle user location detection
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by your browser");
+      return;
+    }
+
+    setLocationLoading(true);
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const newLocation = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+        };
+        setUserLocation(newLocation);
+        setLocationLoading(false);
+        setLocationError(null);
+        
+        // Automatically sort by distance when location is detected
+        setSortBy("distance");
+        
+        // Re-apply filters with new distance calculations
+        applyFiltersAndPagination(allPlaces, currentPage);
+        
+        console.log("📍 User location detected:", newLocation);
+      },
+      (error) => {
+        setLocationLoading(false);
+        let errorMessage = "Unable to detect your location.";
+        
+        if (error.code === 1) {
+          // PERMISSION_DENIED
+          errorMessage = "Location access denied. This feature requires location permissions. Please enable location access in your browser settings, or try using HTTPS.";
+        } else if (error.code === 2) {
+          // POSITION_UNAVAILABLE
+          errorMessage = "Location unavailable. Please check your device's location services.";
+        } else if (error.code === 3) {
+          // TIMEOUT
+          errorMessage = "Location request timed out. Please try again.";
+        }
+        
+        // Check for permissions policy error
+        if (error.message && error.message.includes("permissions policy")) {
+          errorMessage = "Location access is blocked by your browser. This may happen when the site is embedded or not served over HTTPS. Try opening the site directly in a new tab.";
+        }
+        
+        setLocationError(errorMessage);
+        
+        // Show manual location option when geolocation fails
+        setShowManualLocation(true);
+        
+        console.warn("📍 Geolocation blocked - manual location option enabled");
+      },
+      {
+        enableHighAccuracy: false, // Changed to false for better compatibility
+        timeout: 15000, // Increased timeout
+        maximumAge: 300000, // Allow cached position up to 5 minutes
+      }
+    );
+  };
+
+  // Handle manual location entry (using zip code or city)
+  const handleManualLocation = async () => {
+    if (!manualZipCode.trim()) {
+      setLocationError("Please enter a zip code or city name");
+      return;
+    }
+
+    setLocationLoading(true);
+    setLocationError(null);
+
+    try {
+      // Use Nominatim (OpenStreetMap) geocoding API - free and no API key needed
+      const query = encodeURIComponent(manualZipCode.trim());
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=us&limit=1`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'ShopLocal Marketplace Directory'
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const newLocation = {
+          lat: parseFloat(data[0].lat),
+          lon: parseFloat(data[0].lon)
+        };
+        
+        setUserLocation(newLocation);
+        setLocationLoading(false);
+        setLocationError(null);
+        setShowManualLocation(false);
+        setSortBy("distance");
+        applyFiltersAndPagination(allPlaces, currentPage);
+        
+        console.log("📍 Manual location set:", newLocation, "for:", manualZipCode);
+      } else {
+        setLocationError("Location not found. Please try a valid US zip code or city name.");
+        setLocationLoading(false);
+      }
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      setLocationError("Unable to find location. Please try again.");
+      setLocationLoading(false);
+    }
+  };
+
+  // Clear user location
+  const clearUserLocation = () => {
+    setUserLocation(null);
+    setLocationError(null);
+    setShowManualLocation(false);
+    setManualZipCode("");
+    setSortBy("featured");
+    applyFiltersAndPagination(allPlaces, currentPage);
+    console.log("📍 User location cleared");
+  };
+
   // Fetch on component mount
   useEffect(() => {
     fetchCategories();
@@ -798,6 +945,13 @@ export default function VendorsDirectory() {
     }
   }, [showMap]);
 
+  // Recalculate distances when user location changes
+  useEffect(() => {
+    if (userLocation && allPlaces.length > 0) {
+      applyFiltersAndPagination(allPlaces, currentPage);
+    }
+  }, [userLocation]);
+
   // Handle search submit (for Enter key)
   const handleSearch = () => {
     // Search happens automatically via useEffect
@@ -830,6 +984,13 @@ export default function VendorsDirectory() {
   const sortedVendors = [...filteredVendors].sort((a, b) => {
     if (sortBy === "rating") return b.rating - a.rating;
     if (sortBy === "name") return a.name.localeCompare(b.name);
+    if (sortBy === "distance") {
+      // Sort by distance (nearest first)
+      if (a.distance === undefined && b.distance === undefined) return 0;
+      if (a.distance === undefined) return 1;
+      if (b.distance === undefined) return -1;
+      return a.distance - b.distance;
+    }
     return 0; // featured
   });
 
@@ -1260,6 +1421,53 @@ export default function VendorsDirectory() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Use My Location Button */}
+                    <Button
+                      variant="outline"
+                      onClick={handleUseMyLocation}
+                      disabled={locationLoading}
+                      className="rounded-lg"
+                    >
+                      {locationLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Detecting...
+                        </>
+                      ) : userLocation ? (
+                        <>
+                          <Navigation className="w-4 h-4 mr-2 text-green-600" />
+                          Location Set
+                        </>
+                      ) : (
+                        <>
+                          <Navigation className="w-4 h-4 mr-2" />
+                          Use My Location
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Manual Location Toggle or Clear Location */}
+                    {userLocation ? (
+                      <Button
+                        variant="ghost"
+                        onClick={clearUserLocation}
+                        className="rounded-lg text-gray-600 hover:text-red-600"
+                        size="sm"
+                      >
+                        Clear Location
+                      </Button>
+                    ) : !showManualLocation ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setShowManualLocation(true)}
+                        className="rounded-lg text-gray-600 hover:text-gray-900"
+                        size="sm"
+                      >
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Enter Zip Code
+                      </Button>
+                    ) : null}
+                    
                     <Button
                       variant={showMap ? "default" : "outline"}
                       onClick={() => setShowMap(!showMap)}
@@ -1274,6 +1482,47 @@ export default function VendorsDirectory() {
                     </Button>
                   </div>
                 </div>
+                
+                {/* Manual Location Input - Show when geolocation fails */}
+                {showManualLocation && !userLocation && (
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-3 mb-3">
+                      <MapPin className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <h3 className="text-sm text-blue-900 mb-1">Enter Your Location Manually</h3>
+                        <p className="text-xs text-blue-700">
+                          Browser location is blocked. Enter your zip code or city to see distances.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Enter zip code or city..."
+                        value={manualZipCode}
+                        onChange={(e) => setManualZipCode(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleManualLocation()}
+                        className="flex-1 rounded-lg h-9"
+                        disabled={locationLoading}
+                      />
+                      <Button
+                        onClick={handleManualLocation}
+                        disabled={locationLoading || !manualZipCode.trim()}
+                        className="rounded-lg bg-sky-600 hover:bg-sky-700"
+                        size="sm"
+                      >
+                        {locationLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          "Set Location"
+                        )}
+                      </Button>
+                    </div>
+                    {locationError && (
+                      <p className="text-xs text-red-600 mt-2">{locationError}</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Map - Show on mobile when toggled */}
@@ -1689,6 +1938,11 @@ function VendorBusinessCard({
           <div className="flex items-center gap-1.5 text-gray-600">
             <MapPin className="w-4 h-4 text-gray-400" />
             <span className="truncate">{vendor.location}</span>
+            {vendor.distance !== undefined && (
+              <span className="text-sky-600 ml-1">
+                • {formatDistance(vendor.distance)}
+              </span>
+            )}
           </div>
           <Tooltip>
             <TooltipTrigger asChild>

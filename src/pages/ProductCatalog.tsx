@@ -41,7 +41,7 @@ export function ProductCatalog() {
     });
 
   const categories = ['Eco-Friendly', 'Handmade', 'Customizable'];
-  const hasActiveFilters = selectedCategory !== 'all' || acceptsOffers || brandFilter !== 'all' || upcFilter !== '';
+  const hasActiveFilters = searchQuery !== '' || selectedCategory !== 'all' || acceptsOffers || brandFilter !== 'all' || upcFilter !== '';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -106,6 +106,7 @@ export function ProductCatalog() {
                   {hasActiveFilters && (
                     <button
                       onClick={() => {
+                        setSearchQuery('');
                         setSelectedCategory('all');
                         setAcceptsOffers(false);
                         setBrandFilter('all');
@@ -116,6 +117,21 @@ export function ProductCatalog() {
                       Clear
                     </button>
                   )}
+                </div>
+
+                {/* Search Filter */}
+                <div className="mb-6 pb-6 border-b border-gray-100">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Search className="w-4 h-4 text-gray-600" />
+                    <h4 className="text-sm text-gray-900">Search</h4>
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="Search products..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="bg-gray-50 border-0 rounded-lg h-9"
+                  />
                 </div>
 
                 {/* Category Filter */}
@@ -194,6 +210,7 @@ export function ProductCatalog() {
                     <div className="h-px bg-gray-100 my-6" />
                     <button
                       onClick={() => {
+                        setSearchQuery('');
                         setSelectedCategory('all');
                         setAcceptsOffers(false);
                         setBrandFilter('all');
@@ -218,6 +235,7 @@ export function ProductCatalog() {
                 {hasActiveFilters && (
                   <button
                     onClick={() => {
+                      setSearchQuery('');
                       setSelectedCategory('all');
                       setAcceptsOffers(false);
                       setBrandFilter('all');

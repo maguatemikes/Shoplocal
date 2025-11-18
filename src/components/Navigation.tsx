@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Search, ShoppingCart, User, Phone, ChevronDown, Menu, X } from 'lucide-react';
+import { CartDrawer } from './CartDrawer';
 
 const logoImage = 'https://wholesaleforeveryone.com/wp-content/uploads/2022/12/img_logo.webp';
 
@@ -32,6 +33,7 @@ export function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
 
   /**
    * Main navigation links configuration
@@ -110,7 +112,7 @@ export function Navigation() {
               
               {/* Cart Button with Badge (Desktop only) */}
               <button 
-                onClick={() => navigate('/cart')}
+                onClick={() => setCartOpen(!cartOpen)}
                 className="hidden md:flex flex-col items-center gap-1 text-gray-700 hover:text-gray-900 transition-colors relative"
               >
                 <ShoppingCart className="w-5 h-5" />
@@ -233,7 +235,7 @@ export function Navigation() {
               {/* Cart Button with Badge */}
               <button 
                 onClick={() => {
-                  navigate('/cart');
+                  setCartOpen(true);
                   setMobileMenuOpen(false);
                 }}
                 className="flex flex-col items-center gap-1 p-3 text-gray-700 hover:bg-gray-50 rounded-md relative"
@@ -261,6 +263,9 @@ export function Navigation() {
           </div>
         </div>
       )}
+
+      {/* Cart Drawer */}
+      <CartDrawer open={cartOpen} onOpenChange={setCartOpen} />
     </nav>
   );
 }

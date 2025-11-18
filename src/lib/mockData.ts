@@ -33,6 +33,7 @@
  * @property {string} location - Physical location
  * @property {string} latitude - Latitude coordinate for location
  * @property {string} longitude - Longitude coordinate for location
+ * @property {number} distance - Distance from user's location in miles
  * @property {string} [brand] - Optional brand name
  * @property {string} [upc] - Optional UPC code
  * @property {object} [socialLinks] - Optional social media links
@@ -52,6 +53,7 @@ export interface Vendor {
   location: string;
   latitude?: string;
   longitude?: string;
+  distance?: number; // Distance from user's location in miles
   brand?: string;
   upc?: string;
   socialLinks?: {
